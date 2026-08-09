@@ -1,23 +1,16 @@
 import { useState, type FormEvent } from 'react';
-import { apiClient, apiErrorMessage } from '../lib/api';
 
 export function DeleteAccount() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [reason, setReason] = useState('');
-  const [status, setStatus] = useState<'idle' | 'submitting' | 'done' | 'error'>('idle');
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<'idle' | 'done'>('idle');
 
-  async function handleSubmit(e: FormEvent) {
+  function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setError(null);
-    setStatus('submitting');
-    try {
-      await apiClient.post('/api/account-deletion-requests', { phoneNumber, reason: reason || undefined });
-      setStatus('done');
-    } catch (err) {
-      setStatus('error');
-      setError(apiErrorMessage(err));
-    }
+    const subject = encodeURIComponent('Yoventra account deletion request');
+    const body = encodeURIComponent(`Registered phone number: ${phoneNumber}\nReason: ${reason || 'Not provided'}`);
+    window.location.href = `mailto:support@yoventra.com?subject=${subject}&body=${body}`;
+    setStatus('done');
   }
 
   return (
@@ -81,14 +74,11 @@ export function DeleteAccount() {
             />
           </div>
 
-          {error ? <p className="rounded-md bg-danger-bg px-3 py-2 text-sm text-danger">{error}</p> : null}
-
           <button
             type="submit"
-            disabled={status === 'submitting'}
             className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
           >
-            {status === 'submitting' ? 'Submitting…' : 'Request Account Deletion'}
+            Request Account Deletion
           </button>
         </form>
       )}
