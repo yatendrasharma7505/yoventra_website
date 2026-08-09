@@ -107,7 +107,7 @@ export function PrivacyPolicy() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }) {
   return (
     <section>
       <h2 className="text-lg font-bold text-foreground">{title}</h2>
