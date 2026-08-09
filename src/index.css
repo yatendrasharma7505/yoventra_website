@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* Color tokens ported 1:1 from the Yoventra Flutter app (Customhub/lib/app_common/app_colors.dart) — same source customhub-admin uses, so all three properties match exactly. */
+@theme {
+  --color-background: #F8F4EE;
+  --color-foreground: #2B2B2F;
+  --color-card: #FFF8F5;
+  --color-primary: #2B2B2F;
+  --color-primary-foreground: #FFF8F5;
+  --color-secondary: #EBE7E0;
+  --color-muted: #F0ECE4;
+  --color-muted-foreground: #616161;
+  --color-accent: #D69A9B;
+  --color-accent-foreground: #2B2B2F;
+  --color-border: #E5E0DC;
+
+  --color-success: #15803D;
+  --color-success-bg: #DCFCE7;
+  --color-danger: #B91C1C;
+  --color-danger-bg: #FEE2E2;
+
+  --font-sans: 'Segoe UI', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+}
