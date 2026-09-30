@@ -18,6 +18,7 @@ export function Header() {
     { label: 'FAQ', href: isHomePage ? '#faq' : '/#faq' },
     { label: 'Privacy Policy', to: '/privacy-policy' },
     { label: 'Delete Account', to: '/delete-account' },
+    { label: 'Influencers', to: '/influencer/login' },
   ];
 
   return (
