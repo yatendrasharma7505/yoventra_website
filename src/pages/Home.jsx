@@ -1,439 +1,477 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
-  Download,
   Tag,
   ShieldCheck,
   Truck,
   RotateCcw,
-  Smartphone,
+  Sparkles,
+  ArrowRight,
+  ChevronRight,
+  Download,
+  Percent,
   CheckCircle2,
   ChevronDown,
-  ShoppingBag,
-  Percent,
-  Lock,
-  ArrowRight,
-  Heart,
-  Users,
-  Sparkles,
+  Gift,
 } from 'lucide-react';
+import { api } from '../api/client';
+import { ProductCard } from '../components/ProductCard';
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.user.yoventra';
 
 export function Home() {
+  const navigate = useNavigate();
+  const [banners, setBanners] = useState([]);
+  const [currentBannerIdx, setCurrentBannerIdx] = useState(0);
+  const [categories, setCategories] = useState([]);
+  const [priceSections, setPriceSections] = useState([]);
+  const [featuredProducts, setFeaturedProducts] = useState([]);
+  const [personalizedProducts, setPersonalizedProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [activeFaq, setActiveFaq] = useState(null);
 
-  const toggleFaq = (index) => {
-    setActiveFaq(activeFaq === index ? null : index);
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [bannersRes, catRes, priceRes, prodRes] = await Promise.all([
+          api.getBanners().catch(() => []),
+          api.getCategories().catch(() => []),
+          api.getPriceSections().catch(() => []),
+          api.getProducts({ pageSize: 50 }).catch(() => ({ items: [], products: [] })),
+        ]);
+
+        const bannerList = Array.isArray(bannersRes) ? bannersRes : bannersRes?.banners || [];
+        setBanners(bannerList);
+
+        const catList = Array.isArray(catRes) ? catRes : catRes?.categories || [];
+        setCategories(catList);
+
+        const priceList = Array.isArray(priceRes) ? priceRes : priceRes?.sections || [];
+        setPriceSections(priceList);
+
+        const prods = (prodRes?.items || prodRes?.products || (Array.isArray(prodRes) ? prodRes : []))
+          .filter((p) => p && (p.status === 'active' || !p.status));
+        setFeaturedProducts(prods);
+
+        // Filter personalized gifts
+        const custom = prods.filter((p) => p.requiresPersonalisation || p.customizable);
+        setPersonalizedProducts(custom);
+      } catch (err) {
+        console.error('Home load error:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  // Auto-rotate banners
+  useEffect(() => {
+    if (!banners.length) return;
+    const timer = setInterval(() => {
+      setCurrentBannerIdx((prev) => (prev + 1) % banners.length);
+    }, 4500);
+    return () => clearInterval(timer);
+  }, [banners.length]);
+
+  const handleBannerClick = (b) => {
+    if (!b) return;
+    const actionType = b.actionType || 'none';
+    const actionValue = b.actionValue || b.linkUrl || '';
+
+    // External URL handling
+    if (actionType === 'external_url' || (b.linkUrl && actionType === 'none')) {
+      const url = b.linkUrl || actionValue;
+      if (url) {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        } else {
+          navigate(url);
+        }
+      }
+      return;
+    }
+
+    // Direct product detail
+    if (actionType === 'product') {
+      if (actionValue) {
+        navigate(`/products/${actionValue}`);
+      }
+      return;
+    }
+
+    // Category navigation
+    if (actionType === 'category') {
+      if (actionValue) {
+        navigate(`/categories/${actionValue}`);
+      } else {
+        navigate('/categories/all');
+      }
+      return;
+    }
+
+    // Collection navigation
+    if (actionType === 'collection') {
+      if (actionValue) {
+        navigate(`/categories/${actionValue}`);
+      } else {
+        navigate('/categories/all');
+      }
+      return;
+    }
+
+    // Price range (e.g. 99, 199, 299)
+    if (actionType === 'priceRange') {
+      if (actionValue) {
+        navigate(`/price/under-${actionValue}`);
+      }
+      return;
+    }
+
+    // Search query
+    if (actionType === 'search') {
+      if (actionValue) {
+        navigate(`/search?q=${encodeURIComponent(actionValue)}`);
+      }
+      return;
+    }
+
+    // Direct fallback IDs if set on banner
+    if (b.categoryId) {
+      navigate(`/categories/${b.categoryId}`);
+      return;
+    }
+    if (b.productId) {
+      navigate(`/products/${b.productId}`);
+      return;
+    }
+    if (b.linkUrl) {
+      navigate(b.linkUrl);
+      return;
+    }
+
+    // Informational or general promo fallback
+    navigate('/categories/all');
   };
 
-  const appCategories = [
-    { name: 'Jogger', desc: 'Comfortable & stylish joggers', tag: 'Trending' },
-    { name: 'Kids', desc: 'Sweatshirts, tees & jeans for kids', tag: 'Top Picks' },
-    { name: 'Men', desc: 'Shirts, tees & casual wear for men', tag: 'Popular' },
-    { name: 'Printed Tshirt', desc: 'Cool graphic & typography tees', tag: 'Best Seller' },
-    { name: 'Tshirt', desc: 'Classic round neck & oversized tees', tag: 'Everyday' },
-    { name: 'Women', desc: 'Tops, dresses & western wear', tag: 'Hot Deals' },
-  ];
-
-  const budgetPicks = [
-    { label: 'UNDER ₹99', desc: 'Everyday basic tees & innerwear deals', discount: 'Flat Discount' },
-    { label: 'UNDER ₹199', desc: 'Graphic t-shirts, kids wear & printed tees', discount: 'Best Value' },
-    { label: 'UNDER ₹299', desc: 'Premium joggers, casual shirts & western wear', discount: 'Top Deals' },
-  ];
-
-  const appFeatures = [
-    {
-      icon: Smartphone,
-      title: 'Seamless OTP Login',
-      desc: 'Sign in instantly with your phone number — no passwords or long forms.',
-    },
-    {
-      icon: Percent,
-      title: 'Outlet-Level Discounts',
-      desc: 'Original readymade branded clothing at heavy outlet discounts, every day.',
-    },
-    {
-      icon: Truck,
-      title: 'Fast All-India Shipping',
-      desc: 'Powered by Delhivery logistics with real-time order tracking in-app.',
-    },
-    {
-      icon: Lock,
-      title: 'COD & Secure Payments',
-      desc: 'Pay via UPI, cards or NetBanking through Razorpay, or choose Cash on Delivery.',
-    },
-    {
-      icon: Heart,
-      title: 'Wishlist & Fast Cart',
-      desc: 'Save favourites and check out in seconds with saved addresses.',
-    },
-    {
-      icon: RotateCcw,
-      title: '5-Day Easy Returns',
-      desc: 'Hassle-free 5-day return window if sizing or quality falls short.',
-    },
-  ];
+  const toggleFaq = (idx) => setActiveFaq(activeFaq === idx ? null : idx);
 
   const faqs = [
     {
-      q: 'What is Yoventra and how are clothing prices so low?',
-      a: 'Yoventra is an online fashion marketplace app where you can buy 100% authentic, original branded ready-to-wear clothing at heavy discounts. We work with trusted sellers and brand outlets to pass direct savings on to you.',
+      q: 'Are all products 100% original & authentic?',
+      a: 'Yes, absolutely! We source directly from authorized manufacturer outlets and verified Indian gift creators. Every product goes through rigorous quality checks.',
     },
     {
-      q: 'Are all clothing products on Yoventra 100% original brands?',
-      a: 'Yes. Every garment listed on Yoventra is genuine, original readymade apparel — we strictly prohibit counterfeits or replicas.',
+      q: 'How does custom photo gift personalization work?',
+      a: 'Simply pick your favorite memory scrapbook or custom album, click "Customize", upload your photos and custom text directly on our website or app, and our artisans will craft your custom gift with premium finishing.',
     },
     {
-      q: 'Does Yoventra offer custom clothes or tailor-made stitching?',
-      a: 'No. Yoventra deals strictly in ready-to-wear garments in standard sizing (S, M, L, XL, XXL). We do not offer custom fabric or tailoring.',
+      q: 'What payment modes are supported?',
+      a: 'We support 100% secure Online Payment (UPI, Google Pay, PhonePe, Paytm, Debit/Credit Cards, NetBanking via Razorpay) as well as Cash on Delivery (COD) across India.',
     },
     {
-      q: 'What is Yoventra’s return policy?',
-      a: 'We offer a hassle-free 5-Day return policy. If you have any sizing or quality issues, you can initiate a return directly from the app within 5 days of delivery.',
-    },
-    {
-      q: 'How can I download the Yoventra app?',
-      a: "You can download the Yoventra Android app from the Google Play Store by searching for 'Yoventra' or using the download links on this page.",
-    },
-    {
-      q: 'What payment methods are supported?',
-      a: 'We support Cash on Delivery (COD) and 100% secure online payment (UPI, cards, NetBanking) via Razorpay.',
-    },
-    {
-      q: 'How long does shipping take, and who delivers?',
-      a: 'Orders ship via the Delhivery logistics network. Most orders across India arrive within 3 to 6 business days, with real-time tracking in the app.',
+      q: 'How fast is delivery?',
+      a: 'All orders are shipped via Delhivery Express logistics. Readymade items typically deliver in 3–5 days, while handcrafted personalized gifts take 4–7 days depending on your pincode.',
     },
   ];
 
   return (
-    <div className="space-y-20 sm:space-y-28 pb-20">
-      {/* HERO SECTION */}
-      <section className="pt-8 sm:pt-16 pb-4">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-            
-            {/* Hero Left Content */}
-            <div className="lg:col-span-6 space-y-7 text-center lg:text-left">
-              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-bold text-foreground shadow-sm">
-                <Sparkles className="w-4 h-4 text-accent" />
-                <span>Your Style, Your Marketplace</span>
-              </div>
+    <div className="space-y-10 sm:space-y-16 pb-16">
+      {/* 1. Hero Banners Carousel */}
+      <section className="mx-auto max-w-7xl px-4 sm:px-6 pt-4 sm:pt-6">
+        {banners.length > 0 ? (
+          <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-border bg-card shadow-lg aspect-[16/7] sm:aspect-[21/8]">
+            {banners.map((b, i) => {
+              const isClickable = b.actionType !== 'none' || b.actionValue || b.linkUrl || b.categoryId || b.productId;
 
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-foreground font-display leading-[1.08]">
-                Discover Trendy Fashion at{' '}
-                <span className="text-accent underline decoration-accent/30 underline-offset-8">
-                  Unbeatable Prices
-                </span>
-              </h1>
+              return (
+                <div
+                  key={b.id || b._id || i}
+                  onClick={() => handleBannerClick(b)}
+                  role={isClickable ? 'button' : undefined}
+                  tabIndex={isClickable ? 0 : undefined}
+                  className={`group absolute inset-0 transition-opacity duration-700 ${
+                    i === currentBannerIdx ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                  } ${isClickable ? 'cursor-pointer' : ''}`}
+                >
+                  <img
+                    src={b.imageUrl || b.image}
+                    alt={b.title || 'Yoventra Promotion'}
+                    className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                  />
+                  {(b.title || b.subtitle || b.eyebrow || b.ctaLabel || isClickable) && (
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent flex items-end justify-between p-6 sm:p-10 pointer-events-none">
+                      <div className="max-w-xl text-white">
+                        {(b.eyebrow || b.tag) && (
+                          <span className="inline-block px-2.5 py-1 rounded-md bg-accent text-[11px] font-extrabold uppercase tracking-wider mb-2 text-white">
+                            {b.eyebrow || b.tag}
+                          </span>
+                        )}
+                        {b.title && <h2 className="text-xl sm:text-3xl font-black font-display drop-shadow-sm">{b.title}</h2>}
+                        {b.subtitle && <p className="mt-1 text-xs sm:text-sm text-white/85 drop-shadow-sm">{b.subtitle}</p>}
+                      </div>
 
-              <p className="text-base sm:text-lg text-muted-foreground max-w-xl mx-auto lg:mx-0 leading-relaxed font-medium">
-                Shop 100% authentic readymade clothing from trusted sellers all in one place. Best prices on joggers, printed t-shirts, men's & women's wear, and kids fashion.
-              </p>
+                      {isClickable && (
+                        <div className="hidden sm:inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-xs font-black text-white shadow-lg group-hover:bg-accent/90 group-hover:scale-105 transition-all shrink-0">
+                          <span>{b.ctaLabel || 'Shop Now'}</span>
+                          <ArrowRight className="h-4 w-4" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
-              <div className="flex flex-wrap justify-center lg:justify-start gap-2.5 pt-1">
-                {['Top Categories', 'Premium Quality', 'Trusted Sellers', 'Best Prices'].map((label) => (
-                  <span
-                    key={label}
-                    className="flex items-center gap-1.5 bg-card border border-border px-3 py-1.5 rounded-xl text-xs font-bold text-foreground shadow-xs"
-                  >
-                    <CheckCircle2 className="w-4 h-4 text-success" /> {label}
-                  </span>
+            {/* Carousel Dots */}
+            {banners.length > 1 && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex gap-1.5">
+                {banners.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentBannerIdx(i);
+                    }}
+                    className={`h-2 rounded-full transition-all ${
+                      i === currentBannerIdx ? 'w-6 bg-accent' : 'w-2 bg-white/60 hover:bg-white'
+                    }`}
+                  />
                 ))}
               </div>
-
-              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
+            )}
+          </div>
+        ) : (
+          /* Fallback Hero Banner */
+          <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-primary via-neutral-900 to-accent text-white p-8 sm:p-14 shadow-xl">
+            <div className="max-w-2xl space-y-4">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-bold backdrop-blur-md">
+                <Sparkles className="h-3.5 w-3.5 text-accent" /> Outlet Prices Up To 80% Off
+              </span>
+              <h1 className="text-3xl sm:text-5xl font-black font-display tracking-tight leading-tight">
+                Authentic Branded Fashion & Personalized Memory Gifts
+              </h1>
+              <p className="text-sm sm:text-base text-white/80">
+                Explore handpicked branded clothing and custom scrapbooks crafted with love. Fast delivery across India powered by Delhivery.
+              </p>
+              <div className="flex flex-wrap gap-3 pt-2">
+                <Link
+                  to="/categories/all"
+                  className="rounded-xl bg-accent px-6 py-3.5 text-sm font-extrabold text-white shadow-lg hover:bg-accent/90 transition-all flex items-center gap-2"
+                >
+                  <span>Shop Collection</span>
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
                 <a
                   href={PLAY_STORE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group flex items-center justify-center gap-3 w-full sm:w-auto rounded-2xl bg-primary px-7 py-4 text-base font-bold text-primary-foreground transition-all hover:bg-foreground shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+                  className="rounded-xl bg-white/10 backdrop-blur-md px-6 py-3.5 text-sm font-bold text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20"
                 >
-                  <Download className="w-5 h-5 text-accent" />
-                  <div className="text-left leading-tight">
-                    <p className="text-[10px] uppercase font-semibold text-primary-foreground/70 tracking-wider">Get App on</p>
-                    <p className="text-base font-extrabold">Google Play Store</p>
-                  </div>
+                  <Download className="h-4 w-4" />
+                  <span>Download App</span>
                 </a>
-
-                <a
-                  href="#why-yoventra"
-                  className="flex items-center justify-center gap-2 w-full sm:w-auto rounded-2xl border border-border bg-card px-6 py-4 text-base font-bold text-foreground transition-all hover:bg-secondary"
-                >
-                  <span>Explore Yoventra</span>
-                  <ArrowRight className="w-4 h-4" />
-                </a>
-              </div>
-
-              {/* Guarantees Bar */}
-              <div className="pt-2 flex items-center justify-center lg:justify-start gap-6 text-xs text-muted-foreground font-bold">
-                <span className="flex items-center gap-1">
-                  <ShieldCheck className="w-4 h-4 text-success" /> 100% Genuine
-                </span>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  <RotateCcw className="w-4 h-4 text-accent" /> 5-Day Easy Returns
-                </span>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  <Truck className="w-4 h-4 text-foreground" /> Delhivery Shipping
-                </span>
               </div>
             </div>
+          </div>
+        )}
+      </section>
 
-            {/* Hero Right Visual — User's App Promo Image 1 */}
-            <div className="lg:col-span-6 flex justify-center">
-              <div className="relative max-w-md rounded-3xl p-2 bg-gradient-to-b from-card via-secondary/40 to-card border border-border shadow-2xl overflow-hidden group">
+      {/* 2. Categories Circular Rail */}
+      <section id="categories" className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="flex items-center justify-between mb-4 sm:mb-6">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-black font-display text-foreground">Explore Categories</h2>
+            <p className="text-xs sm:text-sm text-muted-foreground">Find fashion and gifts curated for you</p>
+          </div>
+          <Link to="/categories/all" className="text-xs sm:text-sm font-extrabold text-accent flex items-center gap-1 hover:underline">
+            View All <ChevronRight className="h-4 w-4" />
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 sm:gap-4">
+          {categories.map((cat) => (
+            <Link
+              key={cat.id || cat._id}
+              to={`/categories/${cat.id || cat._id}`}
+              className="group flex flex-col items-center p-3 rounded-2xl bg-card border border-border hover:border-accent/40 hover:shadow-md transition-all text-center"
+            >
+              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-full overflow-hidden bg-secondary border border-border mb-2.5 group-hover:scale-105 transition-transform">
                 <img
-                  src="/app-promo-1.png"
-                  alt="Yoventra App Promo — Your Style, Your Marketplace"
-                  className="rounded-2xl w-full h-auto object-contain transition-transform duration-500 group-hover:scale-[1.01]"
+                  src={cat.imageUrl || cat.image || '/logo.png'}
+                  alt={cat.name}
+                  className="h-full w-full object-cover"
                 />
               </div>
-            </div>
-
-          </div>
-        </div>
-      </section>
-
-      {/* TRUST STRIP */}
-      <section className="mx-auto max-w-7xl px-4 sm:px-6">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 border-y border-border py-6">
-          {[
-            { icon: ShieldCheck, label: '100% Original Quality' },
-            { icon: Percent, label: 'Best Deals Everyday' },
-            { icon: Truck, label: 'Fast Delhivery Shipping' },
-            { icon: RotateCcw, label: '5-Day Easy Returns' },
-          ].map(({ icon: Icon, label }) => (
-            <div key={label} className="flex items-center gap-3">
-              <Icon className="w-5 h-5 shrink-0 text-accent" />
-              <span className="text-xs sm:text-sm font-extrabold text-foreground">{label}</span>
-            </div>
+              <span className="text-xs sm:text-sm font-extrabold text-foreground group-hover:text-accent transition-colors truncate w-full">
+                {cat.name}
+              </span>
+            </Link>
           ))}
         </div>
       </section>
 
-      {/* WHY YOVENTRA SECTION */}
-      <section id="why-yoventra" className="mx-auto max-w-7xl px-4 sm:px-6">
-        <div className="max-w-3xl mx-auto text-center space-y-3 mb-12">
-          <span className="text-xs font-bold text-accent uppercase tracking-wider">What is Yoventra?</span>
-          <h2 className="text-2xl sm:text-4xl font-extrabold font-display tracking-tight text-foreground">
-            Shop Smart. Shop Yoventra.
-          </h2>
-          <p className="text-muted-foreground text-sm sm:text-base leading-relaxed font-medium">
-            Yoventra connects you with trusted sellers to bring you 100% original, ready-to-wear fashion at unbeatable budget prices. From joggers to printed t-shirts and kids wear, discover everything in one app.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[
-            { icon: Tag, title: 'Top Categories & Brands', desc: 'Explore a rich catalog of readymade garments for Men, Women, and Kids.' },
-            { icon: Percent, title: 'Best Prices & Budget Picks', desc: 'Exclusive deals starting under ₹99, ₹199, and ₹299 with direct savings.' },
-            { icon: ShoppingBag, title: 'Strictly Readymade Garments', desc: 'Standard pre-stitched sizes (S–XXL), ready to wear immediately. No custom tailoring.' },
-          ].map(({ icon: Icon, title, desc }) => (
-            <div key={title} className="bg-card p-6 rounded-2xl border border-border space-y-3 shadow-xs">
-              <div className="w-11 h-11 rounded-xl bg-primary text-accent flex items-center justify-center">
-                <Icon className="w-5 h-5" />
-              </div>
-              <h3 className="text-base font-bold text-foreground font-display">{title}</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* SHOP BY PRICE / BUDGET PICKS */}
+      {/* 3. Budget Picks / Price Sections */}
       <section className="mx-auto max-w-7xl px-4 sm:px-6">
-        <div className="bg-card rounded-3xl p-8 sm:p-10 border border-border shadow-xs">
-          <div className="text-center max-w-xl mx-auto space-y-2 mb-8">
-            <span className="text-xs font-extrabold text-brand-red uppercase tracking-wider">BUDGET PICKS</span>
-            <h2 className="text-2xl sm:text-3xl font-extrabold font-display text-foreground">Shop by Price</h2>
-            <p className="text-xs sm:text-sm text-muted-foreground">Find amazing readymade fashion tailored to your exact budget.</p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            {budgetPicks.map((pick, idx) => (
-              <a
-                key={idx}
-                href={PLAY_STORE_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group bg-secondary/60 hover:bg-secondary p-6 rounded-2xl border border-border text-center space-y-3 transition-all hover:shadow-md"
-              >
-                <span className="inline-block bg-primary text-primary-foreground text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wider">
-                  {pick.discount}
-                </span>
-                <h3 className="text-2xl font-black text-foreground font-display group-hover:text-accent transition-colors">
-                  {pick.label}
-                </h3>
-                <p className="text-xs text-muted-foreground font-medium">{pick.desc}</p>
-                <div className="pt-2 text-xs font-bold text-foreground flex items-center justify-center gap-1">
-                  <span>Explore Products</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </div>
-              </a>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CATEGORIES SHOWCASE WITH USER PROMO IMAGE 2 */}
-      <section id="collections" className="mx-auto max-w-7xl px-4 sm:px-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-          
-          {/* Left App Promo Image 2 */}
-          <div className="lg:col-span-6 flex justify-center order-2 lg:order-1">
-            <div className="relative max-w-md rounded-3xl p-2 bg-gradient-to-b from-card via-secondary/40 to-card border border-border shadow-2xl overflow-hidden group">
-              <img
-                src="/app-promo-2.png"
-                alt="Yoventra App Categories Showcase"
-                className="rounded-2xl w-full h-auto object-contain transition-transform duration-500 group-hover:scale-[1.01]"
-              />
-            </div>
-          </div>
-
-          {/* Right Categories Grid */}
-          <div className="lg:col-span-6 space-y-6 order-1 lg:order-2">
-            <div>
-              <span className="text-xs font-extrabold text-accent uppercase tracking-wider">EXPLORE TOP CATEGORIES</span>
-              <h2 className="text-2xl sm:text-4xl font-extrabold font-display text-foreground tracking-tight mt-1">
-                Find Everything You Love in One Place
-              </h2>
-              <p className="text-sm text-muted-foreground mt-2 leading-relaxed font-medium">
-                Browse our wide selection of readymade apparel for Joggers, Kids, Men, Printed T-Shirts, T-Shirts, and Women's wear.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {appCategories.map((cat, idx) => (
-                <a
-                  key={idx}
-                  href={PLAY_STORE_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group bg-card rounded-2xl border border-border p-4 flex items-center justify-between hover:border-accent transition-all shadow-xs"
-                >
-                  <div>
-                    <span className="text-[10px] font-extrabold text-accent uppercase tracking-wider">{cat.tag}</span>
-                    <h3 className="font-bold text-foreground text-base group-hover:text-accent transition-colors">{cat.name}</h3>
-                    <p className="text-xs text-muted-foreground">{cat.desc}</p>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-accent transition-transform group-hover:translate-x-1" />
-                </a>
-              ))}
-            </div>
-
-            <div className="pt-2">
-              <a
-                href={PLAY_STORE_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-sm font-bold text-foreground hover:text-accent transition-colors"
-              >
-                <span>Browse All Categories in App</span>
-                <ArrowRight className="w-4 h-4" />
-              </a>
-            </div>
-          </div>
-
-        </div>
-      </section>
-
-      {/* APP SHOWCASE & FEATURES */}
-      <section id="app-features" className="mx-auto max-w-7xl px-4 sm:px-6">
-        <div className="bg-primary text-primary-foreground rounded-3xl p-8 sm:p-14 shadow-xl">
-          <div className="max-w-3xl mx-auto text-center space-y-4 mb-10">
-            <span className="text-xs font-bold text-accent uppercase tracking-wider">Built for Fast & Easy Shopping</span>
-            <h2 className="text-2xl sm:text-4xl font-extrabold font-display tracking-tight text-primary-foreground">
-              Everything You Need in the Yoventra App
+        <div className="rounded-3xl bg-secondary/60 border border-border p-6 sm:p-8">
+          <div className="text-center max-w-xl mx-auto mb-6 sm:mb-8">
+            <span className="text-xs font-black text-accent uppercase tracking-wider">Unbeatable Value</span>
+            <h2 className="text-2xl sm:text-3xl font-black font-display text-foreground mt-1">
+              Shop by Budget
             </h2>
-            <p className="text-primary-foreground/70 text-sm leading-relaxed">
-              Download the Yoventra app for Android to browse thousands of branded apparel items, manage orders, track shipments live via Delhivery, and collect exclusive discounts!
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+              Heavy outlet discounts starting at just ₹99. Real branded clothes at wholesale prices!
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {appFeatures.map(({ icon: Icon, title, desc }, idx) => (
-              <div key={idx} className="bg-white/5 p-5 rounded-2xl border border-white/10 space-y-2">
-                <div className="w-10 h-10 rounded-xl bg-accent text-accent-foreground flex items-center justify-center font-bold">
-                  <Icon className="w-5 h-5" />
-                </div>
-                <h4 className="font-bold text-base text-primary-foreground">{title}</h4>
-                <p className="text-xs text-primary-foreground/65 leading-relaxed">{desc}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="pt-10 text-center">
-            <a
-              href={PLAY_STORE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-3 rounded-2xl bg-accent px-8 py-4 text-sm font-extrabold text-accent-foreground transition-transform hover:scale-105 shadow-lg"
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Link
+              to="/price/under-99"
+              className="group rounded-2xl bg-card border border-border p-6 hover:border-accent hover:shadow-lg transition-all text-center"
             >
-              <Download className="w-5 h-5" />
-              <span>Download Yoventra App Now</span>
-            </a>
+              <span className="inline-block px-3 py-1 rounded-full bg-accent/10 text-accent font-black text-xs mb-2">
+                FLAT DISCOUNT
+              </span>
+              <h3 className="text-2xl font-black font-display text-foreground group-hover:text-accent">
+                UNDER ₹99
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">Everyday basic tees & innerwear deals</p>
+            </Link>
+
+            <Link
+              to="/price/under-199"
+              className="group rounded-2xl bg-card border border-border p-6 hover:border-accent hover:shadow-lg transition-all text-center"
+            >
+              <span className="inline-block px-3 py-1 rounded-full bg-accent/10 text-accent font-black text-xs mb-2">
+                BEST VALUE
+              </span>
+              <h3 className="text-2xl font-black font-display text-foreground group-hover:text-accent">
+                UNDER ₹199
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">Graphic tees, kids wear & printed tops</p>
+            </Link>
+
+            <Link
+              to="/price/under-299"
+              className="group rounded-2xl bg-card border border-border p-6 hover:border-accent hover:shadow-lg transition-all text-center"
+            >
+              <span className="inline-block px-3 py-1 rounded-full bg-accent/10 text-accent font-black text-xs mb-2">
+                TOP DEALS
+              </span>
+              <h3 className="text-2xl font-black font-display text-foreground group-hover:text-accent">
+                UNDER ₹299
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">Premium joggers, casual shirts & gifts</p>
+            </Link>
           </div>
         </div>
       </section>
 
-      {/* DOWNLOAD APP CTA BANNER */}
+      {/* 4. Personalized Gifts Spotlight */}
+      {personalizedProducts.length > 0 && (
+        <section className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="flex items-center justify-between mb-4 sm:mb-6">
+            <div className="flex items-center gap-2">
+              <Gift className="h-6 w-6 text-accent" />
+              <div>
+                <h2 className="text-xl sm:text-2xl font-black font-display text-foreground">
+                  Custom Photo Gifts & Scrapbooks
+                </h2>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  Upload your photos & messages — handcrafted for anniversaries & birthdays
+                </p>
+              </div>
+            </div>
+            <Link to="/categories/custom-gifts" className="text-xs sm:text-sm font-extrabold text-accent flex items-center gap-1 hover:underline">
+              View All <ChevronRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
+            {personalizedProducts.slice(0, 4).map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* 5. Trending / Best Sellers Rail */}
       <section className="mx-auto max-w-7xl px-4 sm:px-6">
-        <div className="bg-card rounded-3xl p-8 sm:p-12 border border-border flex flex-col md:flex-row items-center justify-between gap-8 text-center md:text-left shadow-xs">
-          <div className="space-y-2 max-w-xl">
-            <h2 className="text-2xl sm:text-3xl font-extrabold font-display text-foreground">
-              Ready to Upgrade Your Wardrobe for Less?
-            </h2>
-            <p className="text-sm text-muted-foreground leading-relaxed font-medium">
-              Install the official Yoventra app on Google Play Store today. Shop authentic readymade clothing at best prices with fast Delhivery shipping and 5-Day Easy Returns!
-            </p>
+        <div className="flex items-center justify-between mb-4 sm:mb-6">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-black font-display text-foreground">Trending Products</h2>
+            <p className="text-xs sm:text-sm text-muted-foreground">Hot-selling branded fashion & trending picks</p>
           </div>
+          <Link to="/categories/all" className="text-xs sm:text-sm font-extrabold text-accent flex items-center gap-1 hover:underline">
+            View All <ChevronRight className="h-4 w-4" />
+          </Link>
+        </div>
 
-          <a
-            href={PLAY_STORE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-3 bg-primary text-primary-foreground px-8 py-4 rounded-2xl font-extrabold text-sm shrink-0 transition-transform hover:scale-105 shadow-lg"
-          >
-            <Download className="w-5 h-5 text-accent" />
-            <span>Install from Play Store</span>
-          </a>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
+          {featuredProducts.map((product) => (
+            <ProductCard key={product.id} product={product} />
+          ))}
         </div>
       </section>
 
-      {/* FAQ SECTION */}
-      <section id="faq" className="mx-auto max-w-3xl px-4 sm:px-6">
-        <div className="text-center space-y-3 mb-10">
-          <span className="text-xs font-bold text-accent uppercase tracking-wider">Got Questions?</span>
-          <h2 className="text-2xl sm:text-4xl font-extrabold font-display text-foreground tracking-tight">
-            Frequently Asked Questions
-          </h2>
+      {/* 6. Why Yoventra Guarantees */}
+      <section className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6">
+          <div className="flex items-center gap-3 p-4 rounded-2xl bg-card border border-border">
+            <ShieldCheck className="h-8 w-8 text-accent shrink-0" />
+            <div>
+              <h4 className="text-xs sm:text-sm font-extrabold text-foreground">100% Authentic</h4>
+              <p className="text-[11px] text-muted-foreground">Original branded clothes</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 p-4 rounded-2xl bg-card border border-border">
+            <Truck className="h-8 w-8 text-accent shrink-0" />
+            <div>
+              <h4 className="text-xs sm:text-sm font-extrabold text-foreground">Delhivery Express</h4>
+              <p className="text-[11px] text-muted-foreground">Fast All-India shipping</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 p-4 rounded-2xl bg-card border border-border">
+            <Tag className="h-8 w-8 text-accent shrink-0" />
+            <div>
+              <h4 className="text-xs sm:text-sm font-extrabold text-foreground">Outlet Discounts</h4>
+              <p className="text-[11px] text-muted-foreground">Up to 80% off daily</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 p-4 rounded-2xl bg-card border border-border">
+            <RotateCcw className="h-8 w-8 text-accent shrink-0" />
+            <div>
+              <h4 className="text-xs sm:text-sm font-extrabold text-foreground">Easy Returns</h4>
+              <p className="text-[11px] text-muted-foreground">Hassle-free replacement</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 7. FAQ Accordion */}
+      <section className="mx-auto max-w-4xl px-4 sm:px-6">
+        <div className="text-center mb-8">
+          <span className="text-xs font-black text-accent uppercase tracking-wider">Help & Support</span>
+          <h2 className="text-2xl sm:text-3xl font-black font-display text-foreground mt-1">Frequently Asked Questions</h2>
         </div>
 
         <div className="space-y-3">
-          {faqs.map((faq, idx) => {
-            const isOpen = activeFaq === idx;
-            return (
-              <div key={idx} className="bg-card rounded-2xl border border-border overflow-hidden shadow-xs">
-                <button
-                  onClick={() => toggleFaq(idx)}
-                  className="w-full flex items-center justify-between gap-4 p-5 text-left font-bold text-foreground text-sm sm:text-base hover:bg-secondary/50 focus:outline-none"
-                >
-                  <span>{faq.q}</span>
-                  <ChevronDown
-                    className={`w-5 h-5 shrink-0 text-muted-foreground transition-transform duration-200 ${
-                      isOpen ? 'rotate-180 text-foreground' : ''
-                    }`}
-                  />
-                </button>
-                {isOpen && (
-                  <div className="px-5 pb-5 text-xs sm:text-sm text-muted-foreground leading-relaxed border-t border-border pt-3">
-                    {faq.a}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {faqs.map((faq, idx) => (
+            <div key={idx} className="rounded-2xl bg-card border border-border overflow-hidden">
+              <button
+                onClick={() => toggleFaq(idx)}
+                className="w-full flex items-center justify-between p-4 sm:p-5 text-left font-bold text-sm sm:text-base text-foreground hover:bg-secondary/40 transition-colors"
+              >
+                <span>{faq.q}</span>
+                <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${activeFaq === idx ? 'rotate-180 text-accent' : 'text-muted-foreground'}`} />
+              </button>
+              {activeFaq === idx && (
+                <div className="p-4 sm:p-5 pt-0 text-xs sm:text-sm text-muted-foreground leading-relaxed border-t border-border/50 bg-background/50">
+                  {faq.a}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </section>
     </div>
