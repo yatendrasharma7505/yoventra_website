@@ -69,6 +69,26 @@ export function ProductDetail() {
     fetchProduct();
   }, [id]);
 
+  useEffect(() => {
+    // If on a mobile device, attempt to open app, otherwise fall back to Play Store
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile && id) {
+      const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.user.yoventra';
+      const customAppScheme = `yoventra://product/${id}`;
+
+      const startTime = Date.now();
+      window.location.href = customAppScheme;
+
+      const timer = setTimeout(() => {
+        if (Date.now() - startTime < 2000) {
+          window.location.href = playStoreUrl;
+        }
+      }, 1200);
+
+      return () => clearTimeout(timer);
+    }
+  }, [id]);
+
   if (loading) {
     return (
       <div className="flex h-96 items-center justify-center">
@@ -175,6 +195,30 @@ export function ProductDetail() {
         <Link to="/categories/all" className="hover:text-foreground">Products</Link>
         <ChevronRight className="h-3.5 w-3.5" />
         <span className="text-foreground font-bold truncate max-w-xs">{product.title}</span>
+      </div>
+
+      {/* Mobile App & Play Store Banner */}
+      <div className="rounded-2xl bg-gradient-to-r from-primary via-neutral-900 to-accent p-3.5 text-white flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-xl">
+            📱
+          </div>
+          <div>
+            <div className="font-extrabold text-sm">Shop on the Customhub App</div>
+            <div className="text-xs text-white/80">Open this product in app or download directly from Google Play Store</div>
+          </div>
+        </div>
+        <a
+          href={`yoventra://product/${id}`}
+          onClick={() => {
+            setTimeout(() => {
+              window.location.href = 'https://play.google.com/store/apps/details?id=com.user.yoventra';
+            }, 600);
+          }}
+          className="w-full sm:w-auto text-center shrink-0 bg-white text-primary px-4 py-2 rounded-xl font-black text-xs hover:bg-white/90 shadow transition"
+        >
+          Open App / Install on Play Store
+        </a>
       </div>
 
       {/* Main Product Layout */}
