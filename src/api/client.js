@@ -271,7 +271,10 @@ export const api = {
     const qs = q.toString();
     const data = await request(`/products${qs ? `?${qs}` : ''}`);
     const rawList = data?.items || data?.products || (Array.isArray(data) ? data : []);
-    const items = rawList.map(normalizeProduct).filter(Boolean);
+    // Listings only show products a customer can actually buy — out-of-stock
+    // ones are hidden (like the app). A direct link to one still opens its
+    // page via getProduct, which shows it as out of stock.
+    const items = rawList.map(normalizeProduct).filter((p) => p && p.stock > 0);
     return {
       items,
       products: items,

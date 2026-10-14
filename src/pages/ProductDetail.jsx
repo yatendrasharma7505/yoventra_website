@@ -124,7 +124,10 @@ export function ProductDetail() {
   const inWishlist = isInWishlist(product.id || product._id);
   const requiresPersonalisation = Boolean(product.requiresPersonalisation || product.customizable);
 
+  const isProductOutOfStock = Number(product.stock) <= 0;
+
   const handleAddToCart = () => {
+    if (isProductOutOfStock) return;
     if (product.sizes && product.sizes.length > 0 && !selectedSize) {
       setSizeError(true);
       return;
@@ -145,6 +148,7 @@ export function ProductDetail() {
   };
 
   const handleBuyNow = () => {
+    if (isProductOutOfStock) return;
     if (product.sizes && product.sizes.length > 0 && !selectedSize) {
       setSizeError(true);
       return;
@@ -426,6 +430,16 @@ export function ProductDetail() {
           </div>
 
           {/* Action Buttons: Add to Cart & Buy Now */}
+          {isProductOutOfStock ? (
+            <div className="pt-2">
+              <div className="flex items-center justify-center gap-2 rounded-2xl bg-red-50 py-3.5 px-4 text-sm font-extrabold text-red-600">
+                <AlertCircle className="h-4 w-4" /> Out of Stock
+              </div>
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                This product is currently out of stock. Please check back later.
+              </p>
+            </div>
+          ) : (
           <div className="grid grid-cols-2 gap-3 pt-2">
             <button
               onClick={handleAddToCart}
@@ -441,6 +455,7 @@ export function ProductDetail() {
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>
+          )}
 
           {/* Highlights & Guarantees */}
           <div className="grid grid-cols-3 gap-2 pt-4 border-t border-border text-center">
