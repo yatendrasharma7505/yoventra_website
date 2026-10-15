@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ShoppingBag,
@@ -63,6 +63,50 @@ export function Cart() {
       setCouponLoading(false);
     }
   };
+
+  // Automatically re-validate applied coupon if cart items change (e.g. quantity change or item removed)
+  useEffect(() => {
+    if (!appliedCoupon) return;
+    if (lines.length === 0) {
+      setAppliedCoupon(null);
+      return;
+    }
+
+    let isMounted = true;
+    const revalidate = async () => {
+      try {
+        const items = lines.map((l) => ({
+          productId: l.product.id,
+          qty: l.qty,
+          size: l.size,
+        }));
+        const res = await api.getCheckoutTotals({
+          items,
+          couponCode: appliedCoupon.code,
+        });
+
+        if (!isMounted) return;
+
+        if (res?.discountAmount > 0) {
+          setAppliedCoupon((prev) => (prev ? { ...prev, discount: res.discountAmount } : null));
+          setCouponError(null);
+        } else {
+          setAppliedCoupon(null);
+          setCouponError(res?.couponError || 'Coupon is no longer valid for your cart.');
+        }
+      } catch (err) {
+        if (!isMounted) return;
+        setAppliedCoupon(null);
+        setCouponError(err?.message || 'Coupon removed: cart no longer meets the offer requirements.');
+      }
+    };
+
+    revalidate();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [lines, appliedCoupon?.code]);
 
   const discountAmount = appliedCoupon?.discount ?? 0;
   const finalTotal = Math.max(0, subtotal - discountAmount);
@@ -202,8 +246,11 @@ export function Cart() {
                   <CheckCircle2 className="h-4 w-4" /> {appliedCoupon.code} applied (₹{appliedCoupon.discount} OFF)
                 </span>
                 <button
-                  onClick={() => setAppliedCoupon(null)}
-                  className="text-xs font-bold text-danger hover:underline"
+                  onClick={() => {
+                    setAppliedCoupon(null);
+                    setCouponError(null);
+                  }}
+                  className="text-xs font-bold text-danger hover:underline cursor-pointer"
                 >
                   Remove
                 </button>

@@ -180,6 +180,7 @@ export function Checkout() {
               onlineTotal: Number(totalsRes.onlineTotal) || subtotal,
               codTotal: Number(totalsRes.codTotal) || subtotal,
               onlineSaving: Number(totalsRes.onlineSaving) || 0,
+              couponError: totalsRes.couponError || null,
               loaded: true,
             });
           }
@@ -701,12 +702,18 @@ export function Checkout() {
                   ₹{(checkoutTotals.loaded ? checkoutTotals.baseAmount : subtotal).toFixed(2)}
                 </span>
               </div>
-              {(checkoutTotals.discountAmount > 0 || couponDiscount > 0) && (
-                <div className="flex justify-between text-success">
+              {(checkoutTotals.loaded ? checkoutTotals.discountAmount > 0 : couponDiscount > 0) && (
+                <div className="flex justify-between text-success font-medium">
                   <span>Coupon Discount ({couponCode})</span>
                   <span className="font-bold">
                     -₹{(checkoutTotals.loaded ? checkoutTotals.discountAmount : couponDiscount).toFixed(2)}
                   </span>
+                </div>
+              )}
+              {checkoutTotals.loaded && checkoutTotals.couponError && (
+                <div className="p-2.5 rounded-xl bg-danger/10 border border-danger/20 text-xs text-danger font-medium flex items-center gap-1.5">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{checkoutTotals.couponError}</span>
                 </div>
               )}
               <div className="flex justify-between text-muted-foreground">
