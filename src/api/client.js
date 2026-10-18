@@ -168,10 +168,6 @@ export function customizationSummary(c) {
   return parts.join(' · ') || 'added';
 }
 
-/** Mirrors the backend's FREE_SHIPPING_THRESHOLD (lib/orderPricing.js):
- * item value (after coupon) from which delivery is free. */
-export const FREE_DELIVERY_THRESHOLD = 1000;
-
 export function normalizeOrder(o) {
   if (!o) return null;
   const id = o.id || o._id;

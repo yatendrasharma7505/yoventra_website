@@ -2,7 +2,7 @@ import { X, Plus, Minus, Trash2, ArrowRight, ShoppingBag, ShieldCheck } from 'lu
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import { customizationSummary, FREE_DELIVERY_THRESHOLD } from '../api/client';
+import { customizationSummary } from '../api/client';
 
 export function CartDrawer() {
   const { lines, isCartOpen, closeCart, updateQty, removeFromCart, subtotal, cartCount } = useCart();
@@ -139,17 +139,9 @@ export function CartDrawer() {
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>Delivery</span>
-                  {subtotal >= FREE_DELIVERY_THRESHOLD ? (
-                    <span className="font-semibold text-success">FREE Delivery</span>
-                  ) : (
-                    <span className="font-semibold text-foreground">Calculated at checkout</span>
-                  )}
+                  {/* The real charge depends on the address — priced at checkout. */}
+                  <span className="font-semibold text-foreground">Calculated at checkout</span>
                 </div>
-                {subtotal < FREE_DELIVERY_THRESHOLD && (
-                  <div className="text-xs font-semibold text-accent">
-                    Add ₹{Math.ceil(FREE_DELIVERY_THRESHOLD - subtotal)} more for FREE delivery
-                  </div>
-                )}
                 <div className="flex justify-between text-base font-extrabold text-foreground pt-2 border-t border-border">
                   <span>Total Amount</span>
                   <span>₹{subtotal.toFixed(2)}</span>

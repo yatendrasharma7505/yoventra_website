@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import { api, customizationSummary, FREE_DELIVERY_THRESHOLD } from '../api/client';
+import { api, customizationSummary } from '../api/client';
 
 export function Cart() {
   const { lines, updateQty, removeFromCart, subtotal, cartCount } = useCart();
@@ -284,17 +284,9 @@ export function Cart() {
               )}
               <div className="flex justify-between text-muted-foreground">
                 <span>Delivery Charges</span>
-                {finalTotal >= FREE_DELIVERY_THRESHOLD ? (
-                  <span className="font-semibold text-success">FREE</span>
-                ) : (
-                  <span className="font-semibold text-foreground">Calculated at checkout</span>
-                )}
+                {/* The real charge depends on the address — priced at checkout. */}
+                <span className="font-semibold text-foreground">Calculated at checkout</span>
               </div>
-              {finalTotal < FREE_DELIVERY_THRESHOLD && (
-                <div className="text-xs font-semibold text-accent">
-                  Add ₹{Math.ceil(FREE_DELIVERY_THRESHOLD - finalTotal)} more for FREE delivery
-                </div>
-              )}
               <div className="flex justify-between text-lg font-black text-foreground pt-3 border-t border-border">
                 <span>Total Amount</span>
                 <span>₹{finalTotal.toFixed(2)}</span>
