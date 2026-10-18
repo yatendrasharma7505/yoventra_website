@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import { api, customizationSummary } from '../api/client';
+import { api, customizationSummary, FREE_DELIVERY_THRESHOLD } from '../api/client';
 
 export function Cart() {
   const { lines, updateQty, removeFromCart, subtotal, cartCount } = useCart();
@@ -38,16 +38,7 @@ export function Cart() {
     setCouponLoading(true);
     setCouponError(null);
     try {
-      const items = lines.map((l) => ({
-        productId: l.product.id,
-        qty: l.qty,
-        size: l.size,
-      }));
-
-      const res = await api.getCheckoutTotals({
-        items,
-        couponCode: couponCode.trim(),
-      });
+      const res = await api.validateCoupon(couponCode.trim(), lines);
 
       if (res?.discountAmount > 0) {
         setAppliedCoupon({
@@ -75,15 +66,7 @@ export function Cart() {
     let isMounted = true;
     const revalidate = async () => {
       try {
-        const items = lines.map((l) => ({
-          productId: l.product.id,
-          qty: l.qty,
-          size: l.size,
-        }));
-        const res = await api.getCheckoutTotals({
-          items,
-          couponCode: appliedCoupon.code,
-        });
+        const res = await api.validateCoupon(appliedCoupon.code, lines);
 
         if (!isMounted) return;
 
@@ -301,8 +284,17 @@ export function Cart() {
               )}
               <div className="flex justify-between text-muted-foreground">
                 <span>Delivery Charges</span>
-                <span className="font-semibold text-success">FREE</span>
+                {finalTotal >= FREE_DELIVERY_THRESHOLD ? (
+                  <span className="font-semibold text-success">FREE</span>
+                ) : (
+                  <span className="font-semibold text-foreground">Calculated at checkout</span>
+                )}
               </div>
+              {finalTotal < FREE_DELIVERY_THRESHOLD && (
+                <div className="text-xs font-semibold text-accent">
+                  Add ₹{Math.ceil(FREE_DELIVERY_THRESHOLD - finalTotal)} more for FREE delivery
+                </div>
+              )}
               <div className="flex justify-between text-lg font-black text-foreground pt-3 border-t border-border">
                 <span>Total Amount</span>
                 <span>₹{finalTotal.toFixed(2)}</span>

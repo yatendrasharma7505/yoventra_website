@@ -168,6 +168,10 @@ export function customizationSummary(c) {
   return parts.join(' · ') || 'added';
 }
 
+/** Mirrors the backend's FREE_SHIPPING_THRESHOLD (lib/orderPricing.js):
+ * item value (after coupon) from which delivery is free. */
+export const FREE_DELIVERY_THRESHOLD = 1000;
+
 export function normalizeOrder(o) {
   if (!o) return null;
   const id = o.id || o._id;
@@ -370,6 +374,22 @@ export const api = {
     return res;
   },
   getMyOrderTracking: (id) => request(`/orders/mine/${id}/tracking`, { auth: true }),
+
+  // Checks a coupon against cart items without needing an address (the
+  // checkout-totals endpoint requires a delivery PIN, which the cart page
+  // doesn't have). Throws ApiError with the reason when it doesn't apply.
+  validateCoupon: (code, lines) => request('/coupons/validate', {
+    method: 'POST',
+    auth: true,
+    body: {
+      code,
+      items: lines.map((l) => ({
+        productId: l.product.id || l.product._id,
+        qty: Number(l.qty) || 1,
+        size: l.size || undefined,
+      })),
+    },
+  }),
 
   // Uploads (Photo customization)
   uploadFile: async (file) => {

@@ -59,6 +59,10 @@ export function Checkout() {
     onlineTotal: 0,
     codTotal: 0,
     onlineSaving: 0,
+    deliveryCharge: 0,
+    codFee: 0,
+    handlingFee: 0,
+    amountForFreeShipping: 0,
     loaded: false,
   });
 
@@ -183,6 +187,10 @@ export function Checkout() {
               onlineTotal: Number(totalsRes.onlineTotal) || subtotal,
               codTotal: Number(totalsRes.codTotal) || subtotal,
               onlineSaving: Number(totalsRes.onlineSaving) || 0,
+              deliveryCharge: Number(totalsRes.deliveryCharge ?? totalsRes.prepaidShipping) || 0,
+              codFee: Number(totalsRes.codFee) || 0,
+              handlingFee: Number(totalsRes.handlingFee) || 0,
+              amountForFreeShipping: Number(totalsRes.amountForFreeShipping) || 0,
               couponError: totalsRes.couponError || null,
               loaded: true,
             });
@@ -212,11 +220,14 @@ export function Checkout() {
     }
   }, [hasCustomBuild, paymentMethod]);
 
-  const prepaidShipping = checkoutTotals.loaded ? checkoutTotals.prepaidShipping : 0;
-  const codShipping = checkoutTotals.loaded ? checkoutTotals.codShipping : 0;
   const onlineTotal = checkoutTotals.loaded ? checkoutTotals.onlineTotal : Math.max(0, subtotal - couponDiscount);
   const codTotal = checkoutTotals.loaded ? checkoutTotals.codTotal : Math.max(0, subtotal - couponDiscount);
-  const currentShipping = paymentMethod === 'online' ? prepaidShipping : codShipping;
+  // The courier charge is the same for both methods (free from ₹1000); COD
+  // adds a flat COD fee and every order a small handling fee — shown as
+  // separate lines so the breakdown adds up to the payable amount.
+  const deliveryCharge = checkoutTotals.loaded ? checkoutTotals.deliveryCharge : 0;
+  const codFee = checkoutTotals.loaded ? checkoutTotals.codFee : 0;
+  const handlingFee = checkoutTotals.loaded ? checkoutTotals.handlingFee : 0;
   const payableAmount = paymentMethod === 'online' ? onlineTotal : codTotal;
   const onlineSaving = checkoutTotals.onlineSaving || 0;
 
@@ -629,9 +640,11 @@ export function Checkout() {
                   <span className="text-sm font-black font-display text-foreground block">
                     ₹{onlineTotal.toFixed(2)}
                   </span>
-                  <span className="text-[10px] text-muted-foreground font-semibold">
-                    (₹{prepaidShipping.toFixed(0)} delivery)
-                  </span>
+                  {checkoutTotals.loaded && (
+                    <span className="text-[10px] text-muted-foreground font-semibold">
+                      {deliveryCharge > 0 ? `incl. ₹${deliveryCharge.toFixed(0)} delivery` : 'FREE delivery'}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -680,9 +693,11 @@ export function Checkout() {
                   <span className="text-sm font-black font-display text-foreground block">
                     ₹{codTotal.toFixed(2)}
                   </span>
-                  <span className="text-[10px] text-muted-foreground font-semibold">
-                    (₹{codShipping.toFixed(0)} delivery)
-                  </span>
+                  {checkoutTotals.loaded && (
+                    <span className="text-[10px] text-muted-foreground font-semibold">
+                      incl. ₹{codFee.toFixed(0)} COD fee
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -739,17 +754,36 @@ export function Checkout() {
                 </div>
               )}
               <div className="flex justify-between text-muted-foreground">
-                <span>Delhivery Express Delivery</span>
+                <span>Delivery Charges</span>
                 {checkoutTotals.loading ? (
                   <span className="text-muted-foreground flex items-center gap-1">
                     <Loader2 className="h-3 w-3 animate-spin" /> Calculating...
                   </span>
-                ) : currentShipping > 0 ? (
-                  <span className="font-bold text-foreground">₹{currentShipping.toFixed(2)}</span>
+                ) : !checkoutTotals.loaded ? (
+                  <span className="font-semibold text-muted-foreground">Select an address</span>
+                ) : deliveryCharge > 0 ? (
+                  <span className="font-bold text-foreground">₹{deliveryCharge.toFixed(2)}</span>
                 ) : (
                   <span className="font-bold text-success">FREE</span>
                 )}
               </div>
+              {checkoutTotals.loaded && checkoutTotals.amountForFreeShipping > 0 && (
+                <div className="text-[11px] font-semibold text-accent">
+                  Add ₹{Math.ceil(checkoutTotals.amountForFreeShipping)} more for FREE delivery
+                </div>
+              )}
+              {paymentMethod === 'cod' && codFee > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>COD Fee</span>
+                  <span className="font-bold text-foreground">₹{codFee.toFixed(2)}</span>
+                </div>
+              )}
+              {handlingFee > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Handling Fee</span>
+                  <span className="font-bold text-foreground">₹{handlingFee.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-base font-black text-foreground pt-2 border-t border-border">
                 <span>Final Payable</span>
                 <span>₹{payableAmount.toFixed(2)}</span>

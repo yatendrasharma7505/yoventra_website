@@ -2,10 +2,7 @@ import { X, Plus, Minus, Trash2, ArrowRight, ShoppingBag, ShieldCheck } from 'lu
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import { customizationSummary } from '../api/client';
-
-// Mirrors the backend's FREE_SHIPPING_THRESHOLD (lib/orderPricing.js).
-const FREE_DELIVERY_THRESHOLD = 1000;
+import { customizationSummary, FREE_DELIVERY_THRESHOLD } from '../api/client';
 
 export function CartDrawer() {
   const { lines, isCartOpen, closeCart, updateQty, removeFromCart, subtotal, cartCount } = useCart();

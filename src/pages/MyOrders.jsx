@@ -946,8 +946,28 @@ export function MyOrders() {
 
               <div className="flex justify-between text-muted-foreground">
                 <span>Delivery Fee</span>
-                <span>{selectedOrder.shippingCost > 0 ? `₹${selectedOrder.shippingCost}` : 'FREE'}</span>
+                <span>{selectedOrder.shippingCost > 0 ? `₹${Number(selectedOrder.shippingCost).toFixed(2)}` : 'FREE'}</span>
               </div>
+
+              {/* COD and handling fees are part of the total — list them so the bill adds up. */}
+              {Number(selectedOrder.codFee) > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>COD Fee</span>
+                  <span>₹{Number(selectedOrder.codFee).toFixed(2)}</span>
+                </div>
+              )}
+              {Number(selectedOrder.handlingFee) > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Handling Fee</span>
+                  <span>₹{Number(selectedOrder.handlingFee).toFixed(2)}</span>
+                </div>
+              )}
+              {Number(selectedOrder.walletAmountApplied) > 0 && (
+                <div className="flex justify-between text-success font-medium">
+                  <span>Paid from Wallet</span>
+                  <span>-₹{Number(selectedOrder.walletAmountApplied).toFixed(2)}</span>
+                </div>
+              )}
 
               <div className="pt-2 border-t border-border flex justify-between text-sm sm:text-base font-black text-foreground">
                 <span>Total Amount</span>
