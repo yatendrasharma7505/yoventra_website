@@ -2,6 +2,7 @@ import { X, Plus, Minus, Trash2, ArrowRight, ShoppingBag, ShieldCheck } from 'lu
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
+import { customizationSummary } from '../api/client';
 
 export function CartDrawer() {
   const { lines, isCartOpen, closeCart, updateQty, removeFromCart, subtotal, cartCount } = useCart();
@@ -93,7 +94,7 @@ export function CartDrawer() {
                         )}
                         {line.customization && (
                           <div className="mt-1 text-[11px] text-accent font-semibold flex items-center gap-1">
-                            <span>✨ Personalized Gift ({line.customization.photos?.length || 0} photos)</span>
+                            <span>✨ Personalised · {customizationSummary(line.customization)}</span>
                           </div>
                         )}
                       </div>

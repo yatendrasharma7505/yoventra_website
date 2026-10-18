@@ -144,6 +144,30 @@ export function normalizeProduct(p) {
   };
 }
 
+/** A gift's personalisation in the backend's shape ({ images, texts }).
+ * The personalise modal stores { uploads: [{ id, url }] } — url is null
+ * while a photo is still uploading in the background (checkout fills them
+ * in with finishCustomizationUploads before placing the order). Carts saved
+ * by the older website stored { photos, text }: those photos are carried
+ * over (the free text had no question label, so it's dropped). */
+export function toApiCustomization(c) {
+  if (!c) return undefined;
+  const images = c.images
+    ?? (Array.isArray(c.uploads) ? c.uploads.map((u) => u.url).filter(Boolean) : c.photos)
+    ?? [];
+  return { images, texts: Array.isArray(c.texts) ? c.texts : [] };
+}
+
+/** "3 photos · 2 details" for cart lines and the product page. */
+export function customizationSummary(c) {
+  const photos = (c?.uploads ?? c?.images ?? c?.photos ?? []).length;
+  const texts = Array.isArray(c?.texts) ? c.texts.length : (c?.text ? 1 : 0);
+  const parts = [];
+  if (photos) parts.push(`${photos} photo${photos === 1 ? '' : 's'}`);
+  if (texts) parts.push(`${texts} detail${texts === 1 ? '' : 's'}`);
+  return parts.join(' · ') || 'added';
+}
+
 export function normalizeOrder(o) {
   if (!o) return null;
   const id = o.id || o._id;

@@ -52,6 +52,95 @@ function formatDate(dateInput) {
   });
 }
 
+/** Steps for the "Order updates" timeline — same steps and wording as the
+ * app's OrderTimelineScreen: Order Confirmed → Shipped (AWB + courier scans)
+ * → Out For Delivery → Delivered / Delivery Expected, or Cancelled.
+ * tone: 'done' | 'pending' | 'danger'. */
+function buildTimelineSteps(order, tracking) {
+  const scans = tracking?.scans || [];
+  const steps = [
+    {
+      title: 'Order Confirmed',
+      date: formatDate(order.placedAt),
+      tone: 'done',
+      events: [
+        { text: 'Your Order has been placed.', time: formatDateTime(order.placedAt) },
+        ...(order.confirmedAt ? [{ text: 'Seller has processed your order.', time: formatDateTime(order.confirmedAt) }] : []),
+      ],
+    },
+  ];
+
+  if (order.status === 'cancelled') {
+    steps.push({
+      title: 'Cancelled',
+      date: null,
+      tone: 'danger',
+      events: [
+        { text: 'Your order was cancelled.' },
+        ...(order.cancelReason ? [{ text: `Reason: ${order.cancelReason}` }] : []),
+      ],
+    });
+    return steps;
+  }
+
+  if (order.shippedAt || order.trackingNumber || scans.length) {
+    steps.push({
+      title: 'Shipped',
+      date: order.shippedAt ? formatDate(order.shippedAt) : null,
+      tone: 'done',
+      events: [
+        ...(order.trackingNumber ? [{ text: `Delhivery - ${order.trackingNumber}` }] : []),
+        { text: 'Your item has been shipped.', time: order.shippedAt ? formatDateTime(order.shippedAt) : null },
+        ...scans.map((scan) => ({
+          text: [scan.scan, scan.instructions].filter(Boolean).join(': ') + (scan.location ? ` - ${scan.location}` : ''),
+          time: scan.dateTime ? formatDateTime(scan.dateTime) : null,
+        })),
+      ],
+    });
+  }
+
+  const isDelivered = order.status === 'delivered' || /delivered/i.test(tracking?.courierStatus || '');
+  const ofdScan = scans.find((s) => /out for delivery/i.test(`${s.scan} ${s.instructions}`));
+  const isOutForDelivery = Boolean(
+    order.outForDeliveryAt || ofdScan || /out for delivery/i.test(order.courierStatus || tracking?.courierStatus || ''),
+  );
+  const ofdLocation = ofdScan?.location ? ` (${ofdScan.location})` : '';
+
+  steps.push({
+    title: 'Out For Delivery',
+    date: isOutForDelivery || isDelivered ? formatDate(ofdScan?.dateTime || order.outForDeliveryAt || order.deliveredAt) : null,
+    tone: isOutForDelivery || isDelivered ? 'done' : 'pending',
+    events: [
+      {
+        text: isDelivered
+          ? `Item was out for delivery${ofdLocation}.`
+          : isOutForDelivery
+            ? `Item is out for delivery with courier executive${ofdLocation}.`
+            : 'Item yet to reach hub nearest to you.',
+        time: ofdScan?.dateTime ? formatDateTime(ofdScan.dateTime) : null,
+      },
+    ],
+  });
+
+  const expected = order.expectedDeliveryDate || tracking?.expectedDeliveryDate;
+  steps.push({
+    title: isDelivered ? 'Delivered' : 'Delivery Expected',
+    date: isDelivered ? formatDate(order.deliveredAt) : expected ? `by ${formatDate(expected)}` : null,
+    tone: isDelivered ? 'done' : 'pending',
+    events: [
+      {
+        text: isDelivered
+          ? 'Your item has been delivered.'
+          : expected
+            ? `Delivery is expected by ${formatDate(expected)}.`
+            : 'Delivery executive details will be available once the order is out for delivery.',
+        time: isDelivered && order.deliveredAt ? formatDateTime(order.deliveredAt) : null,
+      },
+    ],
+  });
+  return steps;
+}
+
 function formatDateTime(dateInput) {
   if (!dateInput) return '';
   const d = new Date(dateInput);
@@ -160,7 +249,7 @@ export function MyOrders() {
   const [trackingModalOpen, setTrackingModalOpen] = useState(false);
   const [trackingData, setTrackingData] = useState(null);
   const [trackingLoading, setTrackingLoading] = useState(false);
-  const [trackingError, setTrackingError] = useState(null);
+  const [trackingOrder, setTrackingOrder] = useState(null);
 
   // Cancel Modal State
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
@@ -250,19 +339,21 @@ export function MyOrders() {
     setTimeout(() => setCopiedId(false), 2000);
   };
 
+  // Opens the timeline straight away from the order's own dates; live
+  // courier scans are added once they load (only shipped orders have a
+  // waybill to look up).
   const handleOpenTracking = async (order) => {
-    const orderId = order.id || order._id;
-    setTrackingModalOpen(true);
-    setTrackingLoading(true);
-    setTrackingError(null);
+    setTrackingOrder(order);
     setTrackingData(null);
+    setTrackingModalOpen(true);
+    if (!order.trackingNumber) return;
 
+    setTrackingLoading(true);
     try {
-      const res = await api.getMyOrderTracking(orderId);
+      const res = await api.getMyOrderTracking(order.id || order._id);
       setTrackingData(res);
-    } catch (err) {
-      // If courier waybill is not yet generated, provide a helpful fallback
-      setTrackingError(err.message || 'Shipment tracking information is not available yet.');
+    } catch {
+      // No scans yet — the timeline from order dates is still shown.
     } finally {
       setTrackingLoading(false);
     }
@@ -333,6 +424,165 @@ export function MyOrders() {
       </div>
     );
   }
+
+  // Popups shared by both views — the order details view returns early,
+  // so they must be rendered there too (they used to exist only in the list
+  // view, which is why "See all updates & Track" and Cancel did nothing).
+  const overlays = (
+    <>
+      {/* ========================================== */}
+      {/* MODAL 1: ORDER UPDATES TIMELINE (app's "See all updates") */}
+      {/* ========================================== */}
+      {trackingModalOpen && trackingOrder && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-full sm:max-w-lg max-h-[90vh] flex flex-col rounded-t-3xl sm:rounded-3xl bg-card border border-border shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div>
+                <h3 className="text-base font-extrabold text-foreground">Order updates</h3>
+                <p className="text-[11px] text-muted-foreground">Order #{trackingOrder.orderNumber}</p>
+              </div>
+              <button
+                onClick={() => setTrackingModalOpen(false)}
+                aria-label="Close"
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-5">
+              {trackingLoading && (
+                <div className="mb-4 flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Fetching live courier updates…
+                </div>
+              )}
+              <ol>
+                {buildTimelineSteps(trackingOrder, trackingData?.tracking).map((step, sIdx, all) => {
+                  const last = sIdx === all.length - 1;
+                  const dot = step.tone === 'done' ? 'bg-success' : step.tone === 'danger' ? 'bg-danger' : 'bg-border';
+                  return (
+                    <li key={sIdx} className="relative flex gap-3.5">
+                      <div className="flex flex-col items-center">
+                        <span className={`mt-1 h-3.5 w-3.5 shrink-0 rounded-full ${dot}`} />
+                        {!last && <span className={`w-0.5 flex-1 ${step.tone === 'done' && all[sIdx + 1].tone === 'done' ? 'bg-success' : 'bg-border'}`} />}
+                      </div>
+                      <div className={`min-w-0 flex-1 ${last ? '' : 'pb-6'}`}>
+                        <div className="flex flex-wrap items-baseline gap-x-2">
+                          <span className={`text-sm font-extrabold ${step.tone === 'pending' ? 'text-muted-foreground' : 'text-foreground'}`}>
+                            {step.title}
+                          </span>
+                          {step.date && <span className="text-[11px] font-semibold text-muted-foreground">{step.date}</span>}
+                        </div>
+                        <div className="mt-1.5 space-y-2">
+                          {step.events.map((ev, eIdx) => (
+                            <div key={eIdx}>
+                              <p className="text-xs text-foreground/80">{ev.text}</p>
+                              {ev.time && <p className="text-[10.5px] text-muted-foreground">{ev.time}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL 2: CANCEL ORDER REASON DIALOG       */}
+      {/* ========================================== */}
+      {cancelModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-3xl bg-card border border-border p-6 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <h3 className="text-base font-extrabold text-foreground">Cancel Order</h3>
+              <button onClick={() => setCancelModalOpen(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Please select a reason for cancelling Order #{selectedOrder?.orderNumber}:
+              </p>
+
+              <div className="space-y-2">
+                {CANCEL_REASONS.map((r) => (
+                  <label
+                    key={r}
+                    onClick={() => setCancelReason(r)}
+                    className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer text-xs transition-all ${
+                      cancelReason === r
+                        ? 'border-accent bg-accent/5 font-bold text-foreground'
+                        : 'border-border bg-card text-muted-foreground hover:bg-secondary'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="cancelReason"
+                      checked={cancelReason === r}
+                      onChange={() => setCancelReason(r)}
+                      className="accent-accent"
+                    />
+                    <span>{r}</span>
+                  </label>
+                ))}
+              </div>
+
+              {cancelReason.toLowerCase() === 'other' && (
+                <textarea
+                  value={cancelCustomNotes}
+                  onChange={(e) => setCancelCustomNotes(e.target.value)}
+                  placeholder="Please specify additional details..."
+                  rows={2}
+                  className="w-full rounded-xl border border-border bg-card p-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none"
+                />
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={() => setCancelModalOpen(false)}
+                className="flex-1 rounded-xl border border-border py-2.5 text-xs font-bold text-foreground hover:bg-secondary"
+              >
+                Keep Order
+              </button>
+              <button
+                onClick={handleConfirmCancel}
+                disabled={cancelling}
+                className="flex-1 rounded-xl bg-danger py-2.5 text-xs font-bold text-white hover:bg-danger/90 disabled:opacity-50"
+              >
+                {cancelling ? 'Cancelling...' : 'Confirm Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL 3: PERSONALIZED PHOTO LIGHTBOX       */}
+      {/* ========================================== */}
+      {previewPhoto && (
+        <div
+          onClick={() => setPreviewPhoto(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+        >
+          <div className="relative max-w-xl max-h-[85vh] rounded-2xl overflow-hidden bg-card border border-border shadow-2xl">
+            <button
+              onClick={() => setPreviewPhoto(null)}
+              className="absolute top-3 right-3 p-1.5 rounded-full bg-black/60 text-white hover:bg-black"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <img src={previewPhoto} alt="Personalized item" className="max-h-[80vh] w-auto object-contain" />
+          </div>
+        </div>
+      )}
+    </>
+  );
 
   // ==========================================
   // VIEW 1: FULL ORDER DETAILS VIEW
@@ -748,6 +998,7 @@ export function MyOrders() {
             </a>
           </div>
         </div>
+        {overlays}
       </div>
     );
   }
@@ -960,190 +1211,7 @@ export function MyOrders() {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* MODAL 1: DELHIVERY TRACKING SCAN TIMELINE */}
-      {/* ========================================== */}
-      {trackingModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-lg rounded-3xl bg-card border border-border p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-accent/10 text-accent">
-                  <Truck className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-foreground">Delhivery Express Tracking</h3>
-                  <p className="text-[11px] text-muted-foreground">Live courier shipment timeline</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setTrackingModalOpen(false)}
-                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {trackingLoading ? (
-              <div className="flex h-48 items-center justify-center">
-                <Loader2 className="h-6 w-6 animate-spin text-accent" />
-              </div>
-            ) : trackingData?.tracking?.scans?.length > 0 ? (
-              <div className="space-y-4">
-                <div className="p-3.5 rounded-2xl bg-secondary/60 text-xs space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Waybill / AWB:</span>
-                    <strong className="font-mono text-foreground">{trackingData.waybill}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Current Status:</span>
-                    <strong className="text-accent">{trackingData.tracking.courierStatus || 'In Transit'}</strong>
-                  </div>
-                  {trackingData.tracking.expectedDeliveryDate && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Expected Delivery:</span>
-                      <strong className="text-foreground">{formatDate(trackingData.tracking.expectedDeliveryDate)}</strong>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-4 relative pl-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-border">
-                  {trackingData.tracking.scans.map((scan, sIdx) => (
-                    <div key={sIdx} className="relative space-y-1">
-                      <div className="absolute -left-6 top-1 h-3 w-3 rounded-full bg-accent border-2 border-card" />
-                      <p className="text-xs font-bold text-foreground">
-                        {scan.scan} {scan.location ? `· ${scan.location}` : ''}
-                      </p>
-                      {scan.instructions && (
-                        <p className="text-[11px] text-muted-foreground">{scan.instructions}</p>
-                      )}
-                      <p className="text-[10px] text-muted-foreground">{formatDateTime(scan.dateTime)}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4 text-center py-6">
-                <div className="h-12 w-12 rounded-full bg-secondary flex items-center justify-center mx-auto text-muted-foreground">
-                  <Package className="h-6 w-6" />
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-sm font-bold text-foreground">Shipment Being Prepared</h4>
-                  <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                    {trackingError || 'Delhivery waybill tracking is being initialized. Real-time courier scans will appear as soon as the package leaves our warehouse.'}
-                  </p>
-                </div>
-                <div className="p-4 rounded-2xl bg-secondary/40 text-left text-xs space-y-2">
-                  <p className="font-bold text-foreground">What happens next?</p>
-                  <ul className="list-disc pl-4 space-y-1 text-muted-foreground text-[11px]">
-                    <li>Warehouse packs and inspects your personalized garments</li>
-                    <li>Delhivery picks up package from fulfillment hub</li>
-                    <li>Live transit scans and out-for-delivery SMS sent to your number</li>
-                  </ul>
-                </div>
-              </div>
-            )}
-
-            <button
-              onClick={() => setTrackingModalOpen(false)}
-              className="w-full rounded-xl bg-foreground py-2.5 text-xs font-bold text-background hover:bg-foreground/90 transition-colors"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================== */}
-      {/* MODAL 2: CANCEL ORDER REASON DIALOG       */}
-      {/* ========================================== */}
-      {cancelModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-3xl bg-card border border-border p-6 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h3 className="text-base font-extrabold text-foreground">Cancel Order</h3>
-              <button onClick={() => setCancelModalOpen(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                Please select a reason for cancelling Order #{selectedOrder?.orderNumber}:
-              </p>
-
-              <div className="space-y-2">
-                {CANCEL_REASONS.map((r) => (
-                  <label
-                    key={r}
-                    onClick={() => setCancelReason(r)}
-                    className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer text-xs transition-all ${
-                      cancelReason === r
-                        ? 'border-accent bg-accent/5 font-bold text-foreground'
-                        : 'border-border bg-card text-muted-foreground hover:bg-secondary'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="cancelReason"
-                      checked={cancelReason === r}
-                      onChange={() => setCancelReason(r)}
-                      className="accent-accent"
-                    />
-                    <span>{r}</span>
-                  </label>
-                ))}
-              </div>
-
-              {cancelReason.toLowerCase() === 'other' && (
-                <textarea
-                  value={cancelCustomNotes}
-                  onChange={(e) => setCancelCustomNotes(e.target.value)}
-                  placeholder="Please specify additional details..."
-                  rows={2}
-                  className="w-full rounded-xl border border-border bg-card p-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none"
-                />
-              )}
-            </div>
-
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                onClick={() => setCancelModalOpen(false)}
-                className="flex-1 rounded-xl border border-border py-2.5 text-xs font-bold text-foreground hover:bg-secondary"
-              >
-                Keep Order
-              </button>
-              <button
-                onClick={handleConfirmCancel}
-                disabled={cancelling}
-                className="flex-1 rounded-xl bg-danger py-2.5 text-xs font-bold text-white hover:bg-danger/90 disabled:opacity-50"
-              >
-                {cancelling ? 'Cancelling...' : 'Confirm Cancel'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================== */}
-      {/* MODAL 3: PERSONALIZED PHOTO LIGHTBOX       */}
-      {/* ========================================== */}
-      {previewPhoto && (
-        <div
-          onClick={() => setPreviewPhoto(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-        >
-          <div className="relative max-w-xl max-h-[85vh] rounded-2xl overflow-hidden bg-card border border-border shadow-2xl">
-            <button
-              onClick={() => setPreviewPhoto(null)}
-              className="absolute top-3 right-3 p-1.5 rounded-full bg-black/60 text-white hover:bg-black"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            <img src={previewPhoto} alt="Personalized item" className="max-h-[80vh] w-auto object-contain" />
-          </div>
-        </div>
-      )}
+      {overlays}
     </div>
   );
 }

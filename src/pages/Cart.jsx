@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../api/client';
+import { api, customizationSummary } from '../api/client';
 
 export function Cart() {
   const { lines, updateQty, removeFromCart, subtotal, cartCount } = useCart();
@@ -195,7 +195,7 @@ export function Cart() {
                         )}
                         {line.customization && (
                           <span className="text-xs font-bold text-accent bg-accent/10 px-2.5 py-0.5 rounded-md">
-                            ✨ Personalized ({line.customization.photos?.length || 0} photos)
+                            ✨ Personalised · {customizationSummary(line.customization)}
                           </span>
                         )}
                       </div>

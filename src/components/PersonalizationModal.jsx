@@ -1,188 +1,240 @@
-import { useState } from 'react';
-import { X, Upload, Trash2, Sparkles, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
-import { api } from '../api/client';
+import { useEffect, useReducer, useRef, useState } from 'react';
+import { X, ImagePlus, Trash2, Sparkles, Info, Loader2, RotateCw, Clock, CheckCircle2 } from 'lucide-react';
+import { queueUpload, retryUpload, subscribeUploads, uploadStatus, uploadedUrl } from '../lib/uploadQueue';
 
-export function PersonalizationModal({ isOpen, onClose, product, onConfirm, confirmLabel = 'Add to Cart' }) {
-  const [photos, setPhotos] = useState([]); // array of { file, preview, url, uploading, error }
-  const [customText, setCustomText] = useState('');
-  const [error, setError] = useState(null);
+/**
+ * "Personalise your gift" — the same flow as the app's PersonaliseScreen:
+ * product header, the admin's instructions, a photo grid with min/max and
+ * per-photo retry, and one input per text question the product asks
+ * (label, placeholder, required, max length).
+ *
+ * Photos upload in the background (lib/uploadQueue): the customer can fill
+ * in the details and save while they're still going up; checkout waits for
+ * them when the order is placed. Hands back
+ * { uploads: [{ id, url }], texts: [{ label, value }] } — see
+ * toApiCustomization for the backend's shape.
+ */
+export function PersonalizationModal({ isOpen, onClose, product, size, onConfirm, confirmLabel = 'Add to Cart' }) {
+  const config = product?.customization || {};
+  const textFields = config.textFields || [];
+  const minImages = Number(config.minImages ?? product?.personalisationMinPhotos ?? 0);
+  const maxImages = Number(config.maxImages ?? product?.personalisationMaxPhotos ?? 0);
+
+  const [photos, setPhotos] = useState([]); // { id (upload id), preview }
+  const [answers, setAnswers] = useState(() => textFields.map(() => ''));
+  const fileInput = useRef(null);
+  const [, rerender] = useReducer((n) => n + 1, 0);
+
+  // Re-render as background uploads finish or fail.
+  useEffect(() => subscribeUploads(rerender), []);
 
   if (!isOpen || !product) return null;
 
-  const minPhotos = product.personalisationMinPhotos ?? product.minPhotos ?? 1;
-  const maxPhotos = product.personalisationMaxPhotos ?? product.maxPhotos ?? 10;
-  const requiresText = product.personalisationRequiresText ?? false;
+  const statusOf = (p) => uploadStatus(p.id);
+  const anyUploading = photos.some((p) => statusOf(p) === 'uploading');
+  const anyFailed = photos.some((p) => statusOf(p) === 'failed');
+  const usableCount = photos.filter((p) => statusOf(p) !== 'failed').length;
 
-  const handleFileSelect = async (e) => {
-    const selectedFiles = Array.from(e.target.files || []);
-    if (!selectedFiles.length) return;
+  // First unmet requirement, or null when the customer can continue. Photos
+  // still uploading count — they finish in the background.
+  let blocker = null;
+  if (anyFailed) blocker = 'Retry or remove the failed photo';
+  else if (usableCount < minImages) {
+    const left = minImages - usableCount;
+    blocker = `Add ${left} more photo${left === 1 ? '' : 's'}`;
+  } else {
+    const missing = textFields.find((f, i) => f.required && !answers[i]?.trim());
+    if (missing) blocker = `Fill in "${missing.label}"`;
+  }
 
-    if (photos.length + selectedFiles.length > maxPhotos) {
-      setError(`You can upload at most ${maxPhotos} photos.`);
-      return;
-    }
-
-    setError(null);
-
-    const newSlots = selectedFiles.map((file) => ({
-      file,
-      preview: URL.createObjectURL(file),
-      url: null,
-      uploading: true,
-      error: null,
-    }));
-
-    setPhotos((prev) => [...prev, ...newSlots]);
-
-    // Upload each file to Cloudinary via backend API
-    for (let i = 0; i < newSlots.length; i++) {
-      const slot = newSlots[i];
-      try {
-        const res = await api.uploadFile(slot.file);
-        setPhotos((current) =>
-          current.map((p) => (p.preview === slot.preview ? { ...p, url: res.url, uploading: false } : p))
-        );
-      } catch (err) {
-        setPhotos((current) =>
-          current.map((p) =>
-            p.preview === slot.preview ? { ...p, uploading: false, error: 'Upload failed' } : p
-          )
-        );
-      }
-    }
+  const handleFiles = (e) => {
+    const remaining = maxImages - photos.length;
+    const files = Array.from(e.target.files || []).slice(0, Math.max(0, remaining));
+    e.target.value = '';
+    if (!files.length) return;
+    const added = files.map((file) => ({ id: queueUpload(file), preview: URL.createObjectURL(file) }));
+    setPhotos((cur) => [...cur, ...added]);
   };
 
-  const handleRemovePhoto = (preview) => {
-    setPhotos((prev) => prev.filter((p) => p.preview !== preview));
-  };
+  const removePhoto = (id) => setPhotos((cur) => cur.filter((p) => p.id !== id));
 
-  const handleConfirm = () => {
-    const uploadedUrls = photos.filter((p) => p.url).map((p) => p.url);
-
-    if (uploadedUrls.length < minPhotos) {
-      setError(`Please upload at least ${minPhotos} photo(s). Currently uploaded: ${uploadedUrls.length}`);
-      return;
-    }
-
-    if (requiresText && !customText.trim()) {
-      setError('Please provide the personalized text/message.');
-      return;
-    }
-
+  const submit = () => {
+    if (blocker) return;
     onConfirm({
-      photos: uploadedUrls,
-      text: customText.trim(),
+      uploads: photos.map((p) => ({ id: p.id, url: uploadedUrl(p.id) })),
+      texts: textFields
+        .map((f, i) => ({ label: f.label, value: (answers[i] || '').trim() }))
+        .filter((t) => t.value),
     });
   };
 
-  const isUploadingAny = photos.some((p) => p.uploading);
+  const photoHint = config.imageHint
+    || (minImages > 0 ? `Upload at least ${minImages} photo${minImages === 1 ? '' : 's'}` : 'Photos are optional');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-card border border-border p-6 sm:p-8 shadow-2xl flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="relative w-full sm:max-w-lg h-[92vh] sm:h-auto sm:max-h-[90vh] flex flex-col rounded-t-3xl sm:rounded-3xl bg-background border border-border shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border pb-4 mb-5">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-accent" />
-            <h2 className="text-xl font-extrabold font-display text-foreground">
-              Personalize Your Gift
-            </h2>
-          </div>
+        <div className="flex items-center justify-between px-5 pt-5 pb-3">
+          <h2 className="text-lg font-black text-foreground">Personalise your gift</h2>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="rounded-full p-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {error && (
-          <div className="mb-4 flex items-center gap-2 rounded-xl bg-danger-bg p-3 text-xs sm:text-sm font-semibold text-danger border border-danger/20">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <div className="space-y-6 flex-1">
-          {/* Photo upload section */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                Upload Photos ({photos.length}/{maxPhotos})
-              </label>
-              <span className="text-xs font-bold text-accent">Min: {minPhotos}</span>
-            </div>
-
-            {/* Photo grid */}
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-              {photos.map((p, idx) => (
-                <div key={idx} className="relative aspect-square rounded-xl border border-border overflow-hidden bg-background">
-                  <img src={p.preview} alt="Upload preview" className="h-full w-full object-cover" />
-                  {p.uploading && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                      <Loader2 className="h-5 w-5 text-white animate-spin" />
-                    </div>
-                  )}
-                  {p.error && (
-                    <div className="absolute inset-0 bg-danger/80 flex items-center justify-center p-1 text-[10px] text-white text-center font-bold">
-                      Failed
-                    </div>
-                  )}
-                  <button
-                    onClick={() => handleRemovePhoto(p.preview)}
-                    className="absolute top-1 right-1 rounded-full bg-black/70 p-1 text-white hover:bg-danger transition-colors"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-
-              {photos.length < maxPhotos && (
-                <label className="flex flex-col items-center justify-center aspect-square rounded-xl border-2 border-dashed border-border hover:border-accent hover:bg-accent/5 cursor-pointer transition-all">
-                  <Upload className="h-6 w-6 text-muted-foreground mb-1" />
-                  <span className="text-[11px] font-bold text-muted-foreground">Add Photo</span>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                </label>
-              )}
-            </div>
-          </div>
-
-          {/* Custom text/message */}
-          <div>
-            <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-              Custom Message / Instructions {requiresText && '*'}
-            </label>
-            <textarea
-              rows={3}
-              value={customText}
-              onChange={(e) => setCustomText(e.target.value)}
-              placeholder="e.g. 'Happy 1st Anniversary Priya & Rohan' or any custom text to print"
-              className="w-full px-4 py-3 rounded-xl border border-border bg-background text-sm font-medium text-foreground focus:border-accent focus:ring-2 focus:ring-accent/20 focus:outline-none"
+        <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-6">
+          {/* Product */}
+          <div className="flex items-center gap-3">
+            <img
+              src={product.imageUrl}
+              alt=""
+              className="h-16 w-16 shrink-0 rounded-xl object-contain bg-card border border-border"
             />
+            <div className="min-w-0">
+              <div className="text-sm font-extrabold text-foreground line-clamp-2">{product.title}</div>
+              {size && <div className="mt-0.5 text-xs text-muted-foreground">Size: {size}</div>}
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-md bg-accent/10 px-2 py-0.5 text-[11px] font-bold text-accent">
+                  <Sparkles className="h-3 w-3" /> Personalised
+                </span>
+                {config.handmade && (
+                  <span className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-bold text-foreground">Handmade</span>
+                )}
+                {config.productionDays > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 text-[11px] font-bold text-foreground">
+                    <Clock className="h-3 w-3" /> +{config.productionDays} days to make
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
+
+          {/* Admin instructions */}
+          {config.instructions && (
+            <div className="flex items-start gap-2 rounded-xl bg-blue-50 p-3 text-[13px] leading-snug text-blue-700">
+              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{config.instructions}</span>
+            </div>
+          )}
+
+          {/* Photos */}
+          {maxImages > 0 && (
+            <div>
+              <div className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
+                Your photos · {photos.length}/{maxImages}
+                {minImages > 0 && <span className="text-accent"> *</span>}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">{photoHint}</div>
+
+              <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+                {photos.map((p) => (
+                  <div key={p.id} className="relative aspect-square overflow-hidden rounded-xl border border-border bg-card">
+                    <img src={p.preview} alt="" className="h-full w-full object-cover" />
+                    {statusOf(p) === 'uploading' && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/35">
+                        <Loader2 className="h-5 w-5 animate-spin text-white" />
+                      </div>
+                    )}
+                    {statusOf(p) === 'done' && (
+                      <CheckCircle2 className="absolute bottom-1 left-1 h-4 w-4 rounded-full bg-white text-success" />
+                    )}
+                    {statusOf(p) === 'failed' && (
+                      <button
+                        onClick={() => retryUpload(p.id)}
+                        className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 text-[11px] font-bold text-white"
+                      >
+                        <RotateCw className="h-4 w-4" /> Retry
+                      </button>
+                    )}
+                    <button
+                      onClick={() => removePhoto(p.id)}
+                      aria-label="Remove photo"
+                      className="absolute right-1 top-1 rounded-full bg-black/70 p-1 text-white"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+
+                {photos.length < maxImages && (
+                  <button
+                    onClick={() => fileInput.current?.click()}
+                    className="flex aspect-square flex-col items-center justify-center rounded-xl border-[1.5px] border-accent/40 bg-accent/5 text-accent transition hover:bg-accent/10"
+                  >
+                    <ImagePlus className="h-6 w-6" />
+                    <span className="mt-1 text-[11px] font-bold">Add photos</span>
+                  </button>
+                )}
+              </div>
+              {anyUploading && (
+                <div className="mt-2 text-xs font-semibold text-muted-foreground">
+                  Photos keep uploading in the background — fill in the details and continue.
+                </div>
+              )}
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/*"
+                multiple={maxImages - photos.length > 1}
+                onChange={handleFiles}
+                className="hidden"
+              />
+            </div>
+          )}
+
+          {/* Text questions */}
+          {textFields.map((field, i) => {
+            const max = field.maxLength || 100;
+            const value = answers[i] || '';
+            const setValue = (v) => setAnswers((cur) => cur.map((a, j) => (j === i ? v.slice(0, max) : a)));
+            const inputClass = 'w-full rounded-xl border border-border bg-card px-3.5 py-3 text-sm font-medium text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20';
+            return (
+              <div key={field.label}>
+                <label className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
+                  {field.label}
+                  {field.required && <span className="text-accent"> *</span>}
+                </label>
+                <div className="mt-2">
+                  {max > 60 ? (
+                    <textarea
+                      rows={3}
+                      value={value}
+                      maxLength={max}
+                      onChange={(e) => setValue(e.target.value)}
+                      placeholder={field.placeholder || 'Type here'}
+                      className={inputClass}
+                    />
+                  ) : (
+                    <input
+                      value={value}
+                      maxLength={max}
+                      onChange={(e) => setValue(e.target.value)}
+                      placeholder={field.placeholder || 'Type here'}
+                      className={inputClass}
+                    />
+                  )}
+                </div>
+                <div className="mt-1 text-right text-[10.5px] text-muted-foreground">
+                  {value.length}/{max}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        {/* Action Button */}
-        <div className="mt-8 pt-4 border-t border-border flex items-center gap-3">
+        {/* Footer */}
+        <div className="border-t border-border px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          {blocker && <div className="mb-2 text-center text-xs font-bold text-muted-foreground">{blocker}</div>}
           <button
-            onClick={onClose}
-            className="flex-1 rounded-xl border border-border py-3 text-sm font-bold text-muted-foreground hover:bg-secondary transition-all"
+            onClick={submit}
+            disabled={Boolean(blocker)}
+            className="w-full rounded-xl bg-accent py-3.5 text-sm font-extrabold text-accent-foreground shadow-md transition hover:bg-accent/90 disabled:opacity-50"
           >
-            Cancel
-          </button>
-          <button
-            onClick={handleConfirm}
-            disabled={isUploadingAny || photos.length < minPhotos}
-            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-accent py-3 text-sm font-extrabold text-accent-foreground hover:bg-accent/90 disabled:opacity-50 transition-all shadow-md"
-          >
-            {isUploadingAny ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            <span>{confirmLabel}</span>
+            {confirmLabel}
           </button>
         </div>
       </div>

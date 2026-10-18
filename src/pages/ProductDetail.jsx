@@ -15,7 +15,7 @@ import {
   ArrowRight,
   Share2,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, customizationSummary } from '../api/client';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useDelivery } from '../context/DeliveryContext';
@@ -37,6 +37,8 @@ export function ProductDetail() {
   const [selectedSize, setSelectedSize] = useState(null);
   const [customization, setCustomization] = useState(null);
   const [showPersonalizeModal, setShowPersonalizeModal] = useState(false);
+  // Opened from Buy Now → saving goes straight to checkout.
+  const [checkoutAfterPersonalise, setCheckoutAfterPersonalise] = useState(false);
   const [testPincode, setTestPincode] = useState('');
   const [sizeError, setSizeError] = useState(false);
 
@@ -67,26 +69,6 @@ export function ProductDetail() {
       }
     }
     fetchProduct();
-  }, [id]);
-
-  useEffect(() => {
-    // If on a mobile device, attempt to open app, otherwise fall back to Play Store
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if (isMobile && id) {
-      const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.user.yoventra';
-      const customAppScheme = `yoventra://product/${id}`;
-
-      const startTime = Date.now();
-      window.location.href = customAppScheme;
-
-      const timer = setTimeout(() => {
-        if (Date.now() - startTime < 2000) {
-          window.location.href = playStoreUrl;
-        }
-      }, 1200);
-
-      return () => clearTimeout(timer);
-    }
   }, [id]);
 
   if (loading) {
@@ -126,6 +108,10 @@ export function ProductDetail() {
 
   const isProductOutOfStock = Number(product.stock) <= 0;
 
+  // The picked size as a plain string, or null for products without sizes
+  // (gifts). `typeof null === 'object'`, so selectedSize.size crashed there.
+  const sizeValue = selectedSize && typeof selectedSize === 'object' ? selectedSize.size : selectedSize;
+
   const handleAddToCart = () => {
     if (isProductOutOfStock) return;
     if (product.sizes && product.sizes.length > 0 && !selectedSize) {
@@ -135,12 +121,13 @@ export function ProductDetail() {
     setSizeError(false);
 
     if (requiresPersonalisation && !customization) {
-      setShowPersonalizeModal(true);
+      setCheckoutAfterPersonalise(false);
+      openPersonalise();
       return;
     }
 
     addToCart(product, {
-      size: typeof selectedSize === 'object' ? selectedSize.size : selectedSize,
+      size: sizeValue,
       customization,
       qty: 1,
     });
@@ -156,12 +143,13 @@ export function ProductDetail() {
     setSizeError(false);
 
     if (requiresPersonalisation && !customization) {
-      setShowPersonalizeModal(true);
+      setCheckoutAfterPersonalise(true);
+      openPersonalise();
       return;
     }
 
     addToCart(product, {
-      size: typeof selectedSize === 'object' ? selectedSize.size : selectedSize,
+      size: sizeValue,
       customization,
       qty: 1,
     });
@@ -178,11 +166,23 @@ export function ProductDetail() {
     setCustomization(customData);
     setShowPersonalizeModal(false);
     addToCart(product, {
-      size: typeof selectedSize === 'object' ? selectedSize.size : selectedSize,
+      size: sizeValue,
       customization: customData,
       qty: 1,
     });
-    openCart();
+    // Photos may still be uploading — checkout waits for them on Place Order.
+    if (checkoutAfterPersonalise) navigate('/checkout');
+    else openCart();
+  };
+
+  // Photos upload to the customer's account, so personalising needs a login
+  // first — same as the app.
+  const openPersonalise = () => {
+    if (!isLoggedIn) {
+      openAuthModal('Please login to personalise your gift');
+      return;
+    }
+    setShowPersonalizeModal(true);
   };
 
   const handleCheckPincodeSubmit = async (e) => {
@@ -361,18 +361,24 @@ export function ProductDetail() {
               {customization ? (
                 <div className="flex items-center justify-between p-3 rounded-xl bg-card border border-border">
                   <span className="text-xs font-bold text-success flex items-center gap-1.5">
-                    <CheckCircle2 className="h-4 w-4" /> {customization.photos?.length || 0} Photos & Message Added
+                    <CheckCircle2 className="h-4 w-4" /> Personalised · {customizationSummary(customization)}
                   </span>
                   <button
-                    onClick={() => setShowPersonalizeModal(true)}
+                    onClick={() => {
+                      setCheckoutAfterPersonalise(false);
+                      openPersonalise();
+                    }}
                     className="text-xs font-bold text-accent underline"
                   >
-                    Edit Photos
+                    Edit
                   </button>
                 </div>
               ) : (
                 <button
-                  onClick={() => setShowPersonalizeModal(true)}
+                  onClick={() => {
+                      setCheckoutAfterPersonalise(false);
+                      openPersonalise();
+                    }}
                   className="w-full flex items-center justify-center gap-2 rounded-xl bg-accent py-2.5 px-4 text-xs font-extrabold text-accent-foreground shadow-sm hover:bg-accent/90 transition-all"
                 >
                   <Sparkles className="h-4 w-4" /> Customize With Photos & Text
@@ -521,8 +527,9 @@ export function ProductDetail() {
           isOpen={showPersonalizeModal}
           onClose={() => setShowPersonalizeModal(false)}
           product={product}
+          size={sizeValue}
           onConfirm={handlePersonalizeConfirm}
-          confirmLabel="Save & Add to Cart"
+          confirmLabel={checkoutAfterPersonalise ? 'Save & Continue to Checkout' : 'Save & Add to Cart'}
         />
       )}
     </div>

@@ -14,7 +14,8 @@ import {
 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../api/client';
+import { api, toApiCustomization } from '../api/client';
+import { finishCustomizationUploads } from '../lib/uploadQueue';
 
 export function Checkout() {
   const { lines, subtotal, clearCart } = useCart();
@@ -62,6 +63,8 @@ export function Checkout() {
   });
 
   const [placingOrder, setPlacingOrder] = useState(false);
+  // Waiting for gift photos still uploading in the background.
+  const [finishingPhotos, setFinishingPhotos] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -156,7 +159,7 @@ export function Checkout() {
               productId: l.product.id || l.product._id,
               qty: Number(l.qty) || 1,
               size: l.size || undefined,
-              customization: l.customization || undefined,
+              customization: toApiCustomization(l.customization),
             })),
             address: {
               name: selectedAddress.name,
@@ -288,11 +291,30 @@ export function Checkout() {
       return;
     }
 
-    const items = lines.map((l) => ({
+    // Gift photos picked moments ago may still be uploading — wait for them.
+    let readyLines = lines;
+    if (lines.some((l) => l.customization?.uploads?.some((u) => !u.url))) {
+      setError(null);
+      setFinishingPhotos(true);
+      try {
+        readyLines = await Promise.all(
+          lines.map(async (l) => (l.customization
+            ? { ...l, customization: await finishCustomizationUploads(l.customization) }
+            : l)),
+        );
+      } catch (err) {
+        setError(err.message);
+        return;
+      } finally {
+        setFinishingPhotos(false);
+      }
+    }
+
+    const items = readyLines.map((l) => ({
       productId: l.product.id || l.product._id,
       qty: Number(l.qty) || 1,
       size: l.size || undefined,
-      customization: l.customization || undefined,
+      customization: toApiCustomization(l.customization),
     }));
 
     const isCustomOrder = items.some((i) => i.customization);
@@ -739,13 +761,19 @@ export function Checkout() {
               onClick={handlePlaceOrder}
               disabled={
                 placingOrder ||
+                finishingPhotos ||
                 checkoutTotals.loading ||
                 (!selectedAddress && !showNewAddressForm) ||
                 (serviceability.checked && !serviceability.serviceable)
               }
               className="w-full flex items-center justify-center gap-2 rounded-2xl bg-accent py-4 px-4 text-sm font-black text-accent-foreground shadow-xl hover:bg-accent/90 disabled:opacity-50 transition-all"
             >
-              {placingOrder ? (
+              {finishingPhotos ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Uploading your photos...</span>
+                </>
+              ) : placingOrder ? (
                 <>
                   <Loader2 className="h-5 w-5 animate-spin" />
                   <span>Processing Order...</span>
